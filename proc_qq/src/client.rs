@@ -14,6 +14,7 @@ use rs_qq::ext::common::after_login;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use image::{DynamicImage, GrayImage};
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -152,6 +153,8 @@ async fn qr_login(rq_client: Arc<rs_qq::Client>) -> Result<()> {
                     .with_context(|| "failed to write file")?;
                 image_sig = sig.clone();
                 // todo 桌面环境直接打开, 服务器使用文字渲染
+                let qrcode_acsii = png_to_ascii("qrcode.png").unwrap();
+                tracing::info!("qrcode:\n{}", qrcode_acsii);
                 tracing::info!("二维码: qrcode.png");
             }
             QRCodeState::WaitingForScan => {
@@ -388,4 +391,29 @@ impl ClientBuilder {
 
 fn parse_device_json(json: &str) -> Result<Device, anyhow::Error> {
     Ok(serde_json::from_str(json).with_context(|| format!("DeviceJson解析失败"))?)
+}
+
+fn png_to_ascii(img_path: impl AsRef<Path>) -> Result<String> {
+    let rgba = image::open(img_path)?.into_rgba8();
+    let gray: GrayImage = DynamicImage::ImageRgba8(rgba).into_luma8();
+    let mut result = String::new();
+
+    let (width, height) = gray.dimensions();
+
+    for x in (1..width).step_by(3) {
+        for y in (1..height).step_by(3) {
+            let pixel = gray.get_pixel(x, y);
+
+            if let Some(&gray) = pixel.0.get(0) {
+                if gray >= 255u8 {
+                    result.push_str("\x1b[47m   \x1b[0m");
+                } else {
+                    result.push_str("\x1b[40m   \x1b[0m");
+                }
+            }
+        }
+        result.push('\n');
+    }
+
+    Ok(result)
 }
